@@ -3,11 +3,11 @@
 # these are the defaults for the commandline-options
 KEYSIZE=2048
 PASSPHRASE=
-FILENAME=~/.ssh/id_test
+FILENAME_INPUT=~/.ssh/id_test
 KEYTYPE=rsa
 HOST=host
 USER=${USER}
-HOSTS_FILENAME=test
+HOSTS_FILENAME=
 
 # use "-p <port>" if the ssh-server is listening on a different port
 SSH_OPTS="-o PubkeyAuthentication=no"
@@ -19,7 +19,7 @@ SSH_OPTS="-o PubkeyAuthentication=no"
 function usage() {
 	echo "Specify some parameters, ${1}valid ones are:"
     echo "  -u(--user) <username>, default: ${USER}"
-    echo "  -f(--file) <file>, default: ${FILENAME}"
+    echo "  -f(--file) <file>, default: ${$FILENAME_INPUT}"
     echo "  -h(--host) <hostname>, default: ${HOST}"
     echo "  -hf(--hosts_file) <hostnames_file>, default: ${HOSTS_FILENAME}"
     echo "  -p(--port) <port>, default: <default ssh port>"
@@ -44,7 +44,7 @@ do
 			shift
 			;;
 		-f|--file)
-			FILENAME="$1"
+			FILENAME_INPUT="$1"
 			shift
 			;;
 		-h|--host)
@@ -94,8 +94,9 @@ fi
 
 function do_work() {
     # perform the actual work
-    if [ -f $FILENAME ]
+    if [ -f $FILENAME_INPUT ]
     then
+        FILENAME=$FILENAME_INPUT
         echo Using existing key
     else
         echo Creating a new key using $SSH-KEYGEN
@@ -112,9 +113,6 @@ function do_work() {
 
 
     echo "Transferring key from ${FILENAME} to ${USER}@${HOST} using options '${SSH_OPTS}', keysize ${KEYSIZE} and keytype: ${KEYTYPE}"
-    echo "Press enter to continue or CTRL-C to abort"
-    read
-
     echo Adjust permissions of generated key-files locally
     chmod 0600 ${FILENAME} ${FILENAME}.pub
     RET=$?
@@ -157,13 +155,25 @@ function do_work() {
     echo Setup finished, now try to run $SSH `echo $SSH_OPTS | sed -e 's/-o PubkeyAuthentication=no//g'` -i $FILENAME $USER@$HOST
 }
 
-
+HOSTS_ARRAY=()
 if [ -f $HOSTS_FILENAME ]; then
     while IFS='' read -r line || [[ -n "$line" ]]; do
-        HOST=$line
+        echo "$line"
+        HOSTS_ARRAY+=($line)
+    done < "$HOSTS_FILENAME"
+
+    for array_elt in "${HOSTS_ARRAY[@]}"; do
+        HOST=$array_elt
         echo "Setting up: $HOST"
         do_work
-    done < "$HOSTS_FILENAME"
+        echo "Adding $HOST to ~/.ssh/config"
+        echo "
+Host $HOST
+    IdentityFile ~/.ssh/${HOST//./-}
+    IdentitiesOnly yes" | cat >>~/.ssh/config
+
+        echo "Setting up: $HOST DONE"
+    done
 else
     do_work
 fi
